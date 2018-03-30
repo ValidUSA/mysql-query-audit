@@ -1,5 +1,7 @@
 # MySQL Query Audit Plugin
 
+[![Build Status](https://travis-ci.org/ValidUSA/mysql-query-audit.svg?branch=master)](https://travis-ci.org/ValidUSA/mysql-query-audit)
+
 This plugin is designed to log read access such as ``SELECT`` and ``JOIN`` operations against a list of configured tables. It is currently only tested against MySQL Community 5.7 on CentOS 7.
 
 This plugin was created because:
@@ -135,7 +137,7 @@ You need to download a copy of the MySQL Server source code, copy the query\_aud
 
 
 ```
-sudo yum install yum-utils rpmdevtools cmake gcc gcc-c++ bison libaio-devel numactl-devel ncurses-devel
+sudo yum install yum-utils rpmdevtools cmake make gcc gcc-c++ bison libaio-devel numactl-devel ncurses-devel
 ```
 
 ### Obtaining the MySQL Source
@@ -155,8 +157,9 @@ rpmdev-extract mysql-5.7.*.tar.gz boost_1_*.tar.bz2
 Copy or checkout the query audit plugin into the MySQL source tree's plugin directory:
 
 ```
-cp -r /path/to/query_audit /path/to/mysql-community-5.7.xx-1.el7.src/mysql-5.7.xx/plugin
-cd /path/to/mysql-community-5.7.xx-1.el7.src/mysql-5.7.xx
+cd /path/to/mysql-community-5.7.xx-1.el7.src/mysql-5.7.xx/plugin
+mkdir query_audit
+cp -r /path/to/query_audit/src/* query_audit/
 ```
 
 ### Building MySQL and the plugin

@@ -1,0 +1,16 @@
+sudo: required
+
+language: generic
+
+services:
+    - docker
+
+before_install:
+    - docker build -t centos7/pluginbuild .
+
+install: true
+
+script:
+    - mkdir /tmp/artifact
+    - docker run -v /tmp/artifact:/tmp/artifact centos7/pluginbuild
+    - file /tmp/artifact/query_audit.so
