@@ -3,6 +3,8 @@
 
 #include "cJSON.h"
 
+static MYSQL_PLUGIN query_audit_plugin;
+
 // How to access the pthread_mutex in mysql_mutex_t
 #define mysql_mutex_real_mutex(A) &(A)->m_mutex
 #define log_mutex_init(A,B,C) pthread_mutex_init(mysql_mutex_real_mutex(B), C)
@@ -21,7 +23,7 @@ static PSI_mutex_info mutex_key_list[] = {
 static mysql_mutex_t lock_operations;
 
 static char * log_file;
-static FILE * log_file_fd;
+static FILE * log_file_p;
 static char log_file_default[25] = "/var/log/query_audit.log";
 static char log_file_buffer[256];
 
@@ -67,9 +69,12 @@ static struct st_mysql_sys_var * query_audit_system_variables[] = {
     NULL
 };
 
-static int query_audit_plugin_init(void *arg MY_ATTRIBUTE((unused))) {
+static int
+query_audit_plugin_init(MYSQL_PLUGIN plugin) {
 
-    fprintf(stderr, "Query Audit Plugin: Initializing.\n");
+    query_audit_plugin = plugin;
+
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL, "Initializing");
 
     PSI_server->register_mutex("query_audit", mutex_key_list, 1);
 
@@ -77,11 +82,12 @@ static int query_audit_plugin_init(void *arg MY_ATTRIBUTE((unused))) {
 
     log_mutex_lock(&lock_operations);
 
-    log_file_fd = fopen(log_file, "a+");
+    log_file_p = fopen(log_file, "a+");
 
-    if (log_file_fd == NULL) {
+    if (log_file_p == NULL) {
 
-        fprintf(stderr, "Query Audit Plugin: Could not create or open file '%s'.\n", log_file);
+        my_plugin_log_message(&query_audit_plugin, MY_ERROR_LEVEL,
+            "Unable to create or open log file: %s", log_file);
 
         log_mutex_unlock(&lock_operations);
 
@@ -90,25 +96,30 @@ static int query_audit_plugin_init(void *arg MY_ATTRIBUTE((unused))) {
         return 1;
     }
 
-    fprintf(stderr, "Query Audit Plugin: query_audit_log_file set to '%s'.\n", log_file);
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL,
+        "[query_audit_log_file] set to: %s", log_file);
 
     log_mutex_unlock(&lock_operations);
 
     update_log_databases(NULL, NULL, NULL, &log_databases);
+
     update_log_tables(NULL, NULL, NULL, &log_tables);
+
     update_always_fflush(NULL, NULL, NULL, &always_fflush);
+
     update_log_file(NULL, NULL, NULL, &log_file);
 
     return 0;
 }
 
-static int query_audit_plugin_deinit(void *arg MY_ATTRIBUTE((unused))) {
+static int
+query_audit_plugin_deinit(void *arg MY_ATTRIBUTE((unused))) {
 
-    fprintf(stderr, "Query Audit Plugin: Shutting down.\n"); // XXX Generic log fn
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL, "Shutting down");
 
-    fflush(log_file_fd);
+    fflush(log_file_p);
 
-    fclose(log_file_fd);
+    fclose(log_file_p);
 
     log_mutex_destroy(&lock_operations);
 
@@ -131,7 +142,8 @@ static int in_list(const char * needle, char ** haystack) {
     return result;
 }
 
-static void query_audit_write_log(const struct mysql_event_table_access *event_table, MYSQL_THD thd) {
+static void
+query_audit_write_log(const struct mysql_event_table_access *event_table, MYSQL_THD thd) {
 
     cJSON *root;
     char * json;
@@ -146,28 +158,35 @@ static void query_audit_write_log(const struct mysql_event_table_access *event_t
     strftime(time_buffer, 20, "%F %T", time_info);
 
     root = cJSON_CreateObject();
+
     cJSON_AddItemToObject(root, "timestamp", cJSON_CreateString(time_buffer));
+
     cJSON_AddItemToObject(root, "connection_user", cJSON_CreateString(THDVAR(thd, connection_user)));
+
     cJSON_AddItemToObject(root, "db", cJSON_CreateString(event_table->table_database.str));
+
     cJSON_AddItemToObject(root, "table", cJSON_CreateString(event_table->table_name.str));
+
     cJSON_AddItemToObject(root, "query", cJSON_CreateString(event_table->query.str));
+
     json = cJSON_PrintUnformatted(root);
 
-    fprintf(log_file_fd, "%s\n", json);
+    fprintf(log_file_p, "%s\n", json);
 
     free(json);
 
     cJSON_Delete(root);
 
     if (always_fflush) {
-        if (fflush(log_file_fd) != 0) {
-            fprintf(stderr, "Query Audit Plugin: Failed to call fflush on log_file: %s\n", log_file);
+        if (fflush(log_file_p) != 0) {
+            my_plugin_log_message(&query_audit_plugin, MY_ERROR_LEVEL,
+                "Failed to call fflush on log_file: %s", log_file);
         }
     }
 }
 
-static int query_audit_notify(MYSQL_THD thd,
-        mysql_event_class_t event_class, const void *event) {
+static int
+query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void *event) {
 
     const struct mysql_event_connection * event_connection;
     const struct mysql_event_table_access * event_table;
@@ -205,7 +224,8 @@ static int query_audit_notify(MYSQL_THD thd,
     return 0;
 }
 
-static void update_always_fflush(MYSQL_THD thd __attribute__((unused)),
+static void
+update_always_fflush(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var  __attribute__((unused)),
         void *var_ptr  __attribute__((unused)), const void * save) {
 
@@ -213,13 +233,14 @@ static void update_always_fflush(MYSQL_THD thd __attribute__((unused)),
 
     always_fflush = *(char *) save;
 
-    fprintf(stderr, "Query Audit Plugin: query_audit_always_fflush set to '%s'.\n",
-        (always_fflush) ? "ON" : "OFF");
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL,
+        "[query_audit_always_fflush] set to: %s", (always_fflush) ? "ON" : "OFF");
 
     log_mutex_unlock(&lock_operations);
 }
 
-static void update_log_file(MYSQL_THD thd __attribute__((unused)),
+static void
+update_log_file(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var  __attribute__((unused)),
         void *var_ptr  __attribute__((unused)), const void *save) {
 
@@ -229,7 +250,8 @@ static void update_log_file(MYSQL_THD thd __attribute__((unused)),
 
     new_log_file = (*(char **) save) ? *(char **) save : empty_str;
 
-    fprintf(stderr, "Query Audit Plugin: query_audit_log_file set to '%s'.\n", new_log_file);
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL,
+        "[query_audit_log_file] set to: %s", new_log_file);
 
     strncpy(log_file_buffer, new_log_file, sizeof(log_file_buffer));
 
@@ -237,19 +259,21 @@ static void update_log_file(MYSQL_THD thd __attribute__((unused)),
 
     log_file = log_file_buffer;
 
-    fclose(log_file_fd);
+    fclose(log_file_p);
 
-    log_file_fd = fopen(log_file, "a+");
+    log_file_p = fopen(log_file, "a+");
 
-    if (log_file_fd == NULL) {
-        fprintf(stderr, "Query Audit Plugin: Could not create or open file '%s'.\n", log_file);
+    if (log_file_p == NULL) {
+        my_plugin_log_message(&query_audit_plugin, MY_ERROR_LEVEL,
+            "Could not create or open file: %s", log_file);
     }
 
     log_mutex_unlock(&lock_operations);
 }
 
 // XXX handle values > log_tables_buffer length
-static void update_log_tables(MYSQL_THD thd __attribute__((unused)),
+static void
+update_log_tables(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var __attribute__((unused)),
         void *var_ptr  __attribute__((unused)), const void *save) {
 
@@ -267,7 +291,8 @@ static void update_log_tables(MYSQL_THD thd __attribute__((unused)),
 
     log_tables = log_tables_buffer;
 
-    fprintf(stderr, "Query Audit Plugin: query_audit_log_tables set to '%s'.\n", new_tables);
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL,
+        "[query_audit_log_tables] set to: %s", new_tables);
 
     i = 0;
     while (log_tables_list[i] != NULL) {
@@ -288,7 +313,8 @@ static void update_log_tables(MYSQL_THD thd __attribute__((unused)),
 }
 
 // XXX handle values > log_databases_buffer length
-static void update_log_databases(MYSQL_THD thd __attribute__((unused)),
+static void
+update_log_databases(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var __attribute__((unused)),
         void *var_ptr  __attribute__((unused)), const void *save) {
 
@@ -306,7 +332,8 @@ static void update_log_databases(MYSQL_THD thd __attribute__((unused)),
 
     log_databases = log_databases_buffer;
 
-    fprintf(stderr, "Query Audit Plugin: query_audit_log_databases set to '%s'.\n", new_databases);
+    my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL,
+        "[query_audit_log_databases] set to: %s", new_databases);
 
     i = 0;
     while (log_databases_list[i] != NULL) {
