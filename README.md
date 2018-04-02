@@ -17,8 +17,18 @@ Pull requests to support other operating systems or MariaDB are welcome but we m
 ## Log File Format
 By default logs are written to: ``/var/log/query_audit.log``. Logs are saved as newline delimited JSON. For example:
 
+### type = "query"
+Table access queries are logged as ``"type": "query"``:
+
 ```
-{"timestamp": "2018-03-07 09:53:32", "connection_user": "user@host", "db": "dbname", "table": "tablename", "query": "... FULL QUERY ..."}
+{"time": "2018-03-07 09:53:32", "type": "query", "user": "user@host", "connection": 123, "db": "dbname", "table": "tablename", "query": "... FULL QUERY ..."}
+```
+
+### type = "global_var"
+Any changes to the plugin's variables are logged as ``"type": "set_global"``:
+
+```
+{"time":"2018-04-02 07:26:23", "type":"set_global", "user":"user@host", "connection": 123, "variable":"query_audit_log_databases", "value":"inventory,wiki"}
 ```
 
 ## Installation

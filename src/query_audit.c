@@ -142,11 +142,10 @@ static int in_list(const char * needle, char ** haystack) {
     return result;
 }
 
-static void
-query_audit_write_log(const struct mysql_event_table_access *event_table, MYSQL_THD thd) {
+static cJSON *
+query_audit_get_json_log(const char * log_type, MYSQL_THD thd) {
 
     cJSON *root;
-    char * json;
     time_t raw_time;
     struct tm * time_info;
 
@@ -154,14 +153,31 @@ query_audit_write_log(const struct mysql_event_table_access *event_table, MYSQL_
     char time_buffer[20];
 
     time(&raw_time);
-    time_info = localtime (&raw_time);
+
+    time_info = localtime(&raw_time);
+
     strftime(time_buffer, 20, "%F %T", time_info);
 
     root = cJSON_CreateObject();
 
-    cJSON_AddItemToObject(root, "timestamp", cJSON_CreateString(time_buffer));
+    cJSON_AddItemToObject(root, "time", cJSON_CreateString(time_buffer));
 
-    cJSON_AddItemToObject(root, "connection_user", cJSON_CreateString(THDVAR(thd, connection_user)));
+    cJSON_AddItemToObject(root, "type", cJSON_CreateString(log_type));
+
+    cJSON_AddItemToObject(root, "user", cJSON_CreateString(THDVAR(thd, connection_user)));
+
+    return root;
+}
+
+static void
+query_audit_write_query_log(const struct mysql_event_table_access * event_table, MYSQL_THD thd) {
+
+    cJSON * root;
+    char * json;
+
+    root = query_audit_get_json_log("query", thd);
+
+    cJSON_AddItemToObject(root, "connection", cJSON_CreateNumber(event_table->connection_id));
 
     cJSON_AddItemToObject(root, "db", cJSON_CreateString(event_table->table_database.str));
 
@@ -177,11 +193,37 @@ query_audit_write_log(const struct mysql_event_table_access *event_table, MYSQL_
 
     cJSON_Delete(root);
 
-    if (always_fflush) {
-        if (fflush(log_file_p) != 0) {
-            my_plugin_log_message(&query_audit_plugin, MY_ERROR_LEVEL,
-                "Failed to call fflush on log_file: %s", log_file);
-        }
+    if (always_fflush && fflush(log_file_p) != 0) {
+        my_plugin_log_message(&query_audit_plugin, MY_ERROR_LEVEL,
+            "Failed to call fflush on log_file: %s", log_file);
+    }
+}
+
+static void
+query_audit_write_gvar_log(const struct mysql_event_global_variable * event_global_var, MYSQL_THD thd) {
+
+    cJSON * root;
+    char * json;
+
+    root = query_audit_get_json_log("set_global", thd);
+
+    cJSON_AddItemToObject(root, "cnx_id", cJSON_CreateNumber(event_global_var->connection_id));
+
+    cJSON_AddItemToObject(root, "variable", cJSON_CreateString(event_global_var->variable_name.str));
+
+    cJSON_AddItemToObject(root, "value", cJSON_CreateString(event_global_var->variable_value.str));
+
+    json = cJSON_PrintUnformatted(root);
+
+    fprintf(log_file_p, "%s\n", json);
+
+    free(json);
+
+    cJSON_Delete(root);
+
+    if (always_fflush && fflush(log_file_p) != 0) {
+        my_plugin_log_message(&query_audit_plugin, MY_ERROR_LEVEL,
+            "Failed to call fflush on log_file: %s", log_file);
     }
 }
 
@@ -190,6 +232,7 @@ query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void *e
 
     const struct mysql_event_connection * event_connection;
     const struct mysql_event_table_access * event_table;
+    const struct mysql_event_global_variable * event_global_var;
 
     log_mutex_lock(&lock_operations);
 
@@ -204,7 +247,16 @@ query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void *e
                 "%s@%s",
                 event_connection->user.str,
                 (event_connection->host.str != NULL) ? event_connection->host.str : event_connection->ip.str);
+        }
 
+    } else if (event_class == MYSQL_AUDIT_GLOBAL_VARIABLE_CLASS) {
+
+        event_global_var = (const struct mysql_event_global_variable *) event;
+
+        if (event_global_var->event_subclass == MYSQL_AUDIT_GLOBAL_VARIABLE_SET &&
+                strncmp(event_global_var->variable_name.str, "query_audit", 11) == 0) {
+
+            query_audit_write_gvar_log(event_global_var, thd);
         }
 
     } else if (event_class == MYSQL_AUDIT_TABLE_ACCESS_CLASS) {
@@ -215,7 +267,7 @@ query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void *e
                 in_list(event_table->table_database.str, log_databases_list) &&
                 in_list(event_table->table_name.str, log_tables_list)) {
 
-            query_audit_write_log(event_table, thd);
+            query_audit_write_query_log(event_table, thd);
         }
     }
 
@@ -359,11 +411,11 @@ static struct st_mysql_audit query_audit_descriptor = {
     query_audit_notify,
     {
         0,
-        (unsigned long) MYSQL_AUDIT_CONNECTION_CONNECT | MYSQL_AUDIT_CONNECTION_CHANGE_USER,
+        MYSQL_AUDIT_CONNECTION_CONNECT | MYSQL_AUDIT_CONNECTION_CHANGE_USER,
         0,
         0,
-        (unsigned long) MYSQL_AUDIT_TABLE_ACCESS_ALL,
-        0,
+        MYSQL_AUDIT_TABLE_ACCESS_ALL,
+        MYSQL_AUDIT_GLOBAL_VARIABLE_ALL,
         0,
         0,
         0,
