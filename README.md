@@ -28,7 +28,7 @@ Table access queries are logged as ``"type": "query"``:
 Any changes to the plugin's variables are logged as ``"type": "set_global"``:
 
 ```
-{"time":"2018-04-02 07:26:23", "type":"set_global", "user":"user@host", "connection": 123, "variable":"query_audit_log_databases", "value":"inventory,wiki"}
+{"time":"2018-04-02 07:26:23", "type": "set_global", "user": "user@host", "connection": 123, "variable": "query_audit_log_databases", "value": "inventory,wiki"}
 ```
 
 ## Installation

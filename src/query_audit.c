@@ -113,7 +113,7 @@ query_audit_plugin_init(MYSQL_PLUGIN plugin) {
 }
 
 static int
-query_audit_plugin_deinit(void *arg MY_ATTRIBUTE((unused))) {
+query_audit_plugin_deinit(void * arg MY_ATTRIBUTE((unused))) {
 
     my_plugin_log_message(&query_audit_plugin, MY_INFORMATION_LEVEL, "Shutting down");
 
@@ -207,7 +207,7 @@ query_audit_write_gvar_log(const struct mysql_event_global_variable * event_glob
 
     root = query_audit_get_json_log("set_global", thd);
 
-    cJSON_AddItemToObject(root, "cnx_id", cJSON_CreateNumber(event_global_var->connection_id));
+    cJSON_AddItemToObject(root, "connection", cJSON_CreateNumber(event_global_var->connection_id));
 
     cJSON_AddItemToObject(root, "variable", cJSON_CreateString(event_global_var->variable_name.str));
 
@@ -228,7 +228,7 @@ query_audit_write_gvar_log(const struct mysql_event_global_variable * event_glob
 }
 
 static int
-query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void *event) {
+query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void * event) {
 
     const struct mysql_event_connection * event_connection;
     const struct mysql_event_table_access * event_table;
@@ -279,7 +279,7 @@ query_audit_notify(MYSQL_THD thd, mysql_event_class_t event_class, const void *e
 static void
 update_always_fflush(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var  __attribute__((unused)),
-        void *var_ptr  __attribute__((unused)), const void * save) {
+        void * var_ptr __attribute__((unused)), const void * save) {
 
     log_mutex_lock(&lock_operations);
 
@@ -294,7 +294,7 @@ update_always_fflush(MYSQL_THD thd __attribute__((unused)),
 static void
 update_log_file(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var  __attribute__((unused)),
-        void *var_ptr  __attribute__((unused)), const void *save) {
+        void * var_ptr __attribute__((unused)), const void * save) {
 
     char *new_log_file;
 
@@ -327,7 +327,7 @@ update_log_file(MYSQL_THD thd __attribute__((unused)),
 static void
 update_log_tables(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var __attribute__((unused)),
-        void *var_ptr  __attribute__((unused)), const void *save) {
+        void * var_ptr __attribute__((unused)), const void * save) {
 
     char * new_tables;
     int i;
@@ -368,7 +368,7 @@ update_log_tables(MYSQL_THD thd __attribute__((unused)),
 static void
 update_log_databases(MYSQL_THD thd __attribute__((unused)),
         struct st_mysql_sys_var * var __attribute__((unused)),
-        void *var_ptr  __attribute__((unused)), const void *save) {
+        void * var_ptr __attribute__((unused)), const void * save) {
 
     char * new_databases;
     int i;
