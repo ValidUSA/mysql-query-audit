@@ -1,5 +1,8 @@
 # MySQL Query Audit Plugin
 
+**This repository is no longer actively developed and will be archived.**
+
+
 [![Build Status](https://travis-ci.org/ValidUSA/mysql-query-audit.svg?branch=master)](https://travis-ci.org/ValidUSA/mysql-query-audit)
 
 This plugin is designed to log read access such as ``SELECT`` and ``JOIN`` operations against a list of configured tables. It is currently only tested against MySQL Community 5.7 on CentOS 7.
